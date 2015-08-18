@@ -1,0 +1,153 @@
+#!/usr/bin/env /usr/local/python/bin/python
+import os, sys, optparse
+
+# -----------------------------------------------------------------------
+# General Submissions script - python version
+#
+# To convert old BASH submit scripts, copy the part between the 'qsub < eof'
+# and the 'eof' in the old script into this script where it is commented
+#   'QSUB bash script Begin'
+#
+# Also each job will have different defaults, these default parameters
+# must be changed below.
+#
+# Last modified May'09 - TW
+# -----------------------------------------------------------------------
+max_cpus = 8                #-max no. of CPUs that can be requested
+mem_default="1gb"           #-default memory request to pass to qsub 
+default_queue=""            #-leave blank ("") to use Wooki default 
+                            # (not the same as node attributes
+
+#serial_scratch_dir="/sandbox/" 
+#scratch_dir="/sandbox/"
+
+parser = optparse.OptionParser("usage: %prog [options] jobname [n cpus]")
+
+parser.add_option("-H","--Host",action="store",type="string",
+           dest="host_name", default="",
+           help="submit job to a specific host - doesn't always work ")
+#parser.add_option("-m","--mem",action="store",type="str", dest="min_mem",
+#           default="1GB",  help="request minimum memory e.g. 3gb or 3000mb")
+parser.add_option("-a","--attribute",action="store",type="string",
+           dest="attribute", default="",
+           help="request node attribute eg. submit -a switch2:xeon")       
+parser.add_option("-q","--queue",action="store",type="str", dest="queue_name",
+           default="default",  help="specify a queue to run on")
+parser.add_option("-d","--debug",action="store_true", dest="debug",
+           help="don't submit job, print debugging info")       
+parser.add_option("-t", "--time", action="store", type="string", dest="walltime", default="47:59:00",  help="Set walltime")
+
+(options, args) = parser.parse_args()
+print options
+print args
+
+def abort(message):
+    print message
+    print "*****No job submitted to queue*****"
+    sys.exit()
+
+# ------------------------------------------------------------------------
+# Define the bash script passed to qsub.  This can be cut out from the old
+# bash based submit scripts.   
+#
+#  REMOVE the 'qsub << eof' line and all of the "#PBS " directive lines from the bash script.
+#    i.e.   remove th following from the script:
+#                qsub << eof
+#                #PBS -N $JOBNAME
+#                #PBS -l nodes=1:ppn=$NODES$ATTRIBUTE
+#                #PBS -m n 
+#                 etc....
+#
+#  replace $QJOBNAME with $JOBNAME
+# ------------------------------------------------------------------------
+# ------------------------------------------------------------------------
+# Read Job name from command-line argument and check if input file exists
+# Both "jobname" and "jobname.gjf" are allowed
+# ------------------------------------------------------------------------
+
+if len(args) == 0:                 # Job name
+    abort ("Missing argument:  Need to specify the job name")
+else:
+    jobname = args[0]
+    if jobname[-4:]==".gjf":                          #Strip ".gjf" from argument
+        jobname=jobname[:-4]
+    if not os.path.exists(jobname+".gjf"):            #check if jobname.gjf exists
+        abort ("Input file: "+jobname+".gjf could not be found.")
+
+if len(args) == 1:    # second argument not specified, assume a serial job
+    n_cpus = 1
+else:
+    n_cpus = int(args[1])
+
+if n_cpus > max_cpus:
+    abort("# of CPUs requested: "+str(n_cpus)+" is greater than the maximum allowed.")
+if n_cpus < 1:
+    abort("Invalid number of CPUs requested: "+str(n_cpus))
+
+PBS_directives=""
+if n_cpus>1:
+    PBS_directives="#$ -pe gaussian "+str(n_cpus) + "\n" + PBS_directives
+
+PBS_directives="#$ -l h_rt=" + options.walltime + "\n" + PBS_directives
+
+
+# ----------------------------------------------
+# -q --queue : specify a queue to run on
+# ----------------------------------------------
+if options.queue_name != "default":
+   PBS_directives="#PBS -q "+options.queue_name+"\n"+PBS_directives
+elif default_queue != "":
+   PBS_directives="#PBS -q "+default_queue+"\n"+PBS_directives
+
+
+#------------------------------------------------------
+# JOB type specific checks i.e. Gaussian specific
+#------------------------------------------------------
+ncpus=1
+
+# Search the g03 input to see if the %NPROC directive is the same as the
+# number of nodes requested.  If not, abort the job.
+nproc_found = False
+for input_line in open(jobname+".gjf"):
+   if "%NPROC" in input_line.upper():
+     input_line=input_line.replace("="," ")
+     nproc_found = True
+     nproc_cpus = int(input_line.split()[1])
+if nproc_found == False:
+   nproc_cpus=1
+
+if nproc_cpus != n_cpus:
+   abort ("CPUs requested must be the same as that specified by %NPROC in G03 input")
+
+if(ncpus>1):
+    PBS_directives="#! -pe openmp " + str(ncpus) + "\n" +PBS_directives
+#************************************************************************************
+# QSUB bash script Begin
+#************************************************************************************
+
+line="""
+source /home/crowley/bin/g09_NBO5.bash
+#/usr/local/lib/g09.bash
+
+cd $STARTDIR
+g09 < $STARTDIR/$JOBNAME.gjf >> $STARTDIR/$JOBNAME.out
+
+"""
+
+PBS_directives="#$ -N "+jobname+"\n"+PBS_directives
+
+line=line.replace("$STARTDIR",os.getcwd())
+#line=line.replace("$SCRATCH_DIR",scratch_dir)
+line=line.replace("$JOBNAME",jobname)
+#
+#************************************************************************************
+# QSUB bash script END
+#************************************************************************************
+
+line = "qsub << eof \n" + PBS_directives + "\n" + line
+
+print line
+
+os.system (line)
+
+

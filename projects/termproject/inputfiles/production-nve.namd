@@ -1,0 +1,54 @@
+# input
+coordinates             moleculefill.pdb
+bincoordinates          production.coor
+extendedSystem          production.xsc
+structure               moleculefill.psf
+parameters              molecule.prm
+paratypecharmm          on
+
+# output
+set output              production-nve
+outputname              $output
+dcdfile                 ${output}.dcd
+xstFile                 ${output}.xst
+dcdfreq                 100
+xstFreq                 100
+
+binaryrestart           no
+outputEnergies          100
+restartfreq             1000
+
+fixedAtoms              off
+
+# Basic dynamics
+exclude                 scaled1-4
+1-4scaling              1
+COMmotion               no
+dielectric              1.0
+
+# Simulation space partitioning
+switching               on
+switchdist              9
+cutoff                  10
+pairlistdist            12
+
+# Multiple timestepping
+firsttimestep           0
+timestep                1
+stepspercycle           1
+nonbondedFreq           1
+fullElectFrequency      1
+
+# Temperature control
+
+set temperature         298
+temperature             $temperature;  # initial temperature
+
+# PBC
+wrapAll                 off
+PME                     yes
+PMEGridSpacing          1.0
+
+# Scripting
+
+run                 1000000
